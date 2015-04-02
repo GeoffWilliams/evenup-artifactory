@@ -37,6 +37,13 @@
 #   String.  Source file name in project
 #   Default: ''
 #
+# [*restart_svc*]
+#   Resource reference.  List of resources to restart after deploying
+#   Default: false (none)
+#
+# [*undeploy*]
+#   boolean.  Should the application be undeployed after installation (rm -rf ...)
+#   Default: false
 #
 # === Examples
 #
@@ -53,6 +60,10 @@
 #
 # * Justin Lambert <mailto:jlambert@letsevenup.com>
 #
+# === Copyright
+#
+# Copyright 2013 EvenUp.
+#
 define artifactory::fetch_artifact (
   $project,
   $version,
@@ -63,7 +74,10 @@ define artifactory::fetch_artifact (
   $repo        = 'libs-release-local',
   $filename    = undef,
   $source_file = undef,
+  $restart_svc = false,
+  $undeploy    = false,
 ){
+
 
   if $source_file {
     $sourcefile_real = $source_file
@@ -81,15 +95,32 @@ define artifactory::fetch_artifact (
     $fetch_url = "${server}/artifactory/${repo}/${path}/${project}/${version}/${sourcefile_real}"
   } else {
     $fetch_url = "${server}/artifactory/${repo}/${project}/${version}/${sourcefile_real}"
+  } 
+
+  if $restart_svc {
+    $notify_svc = $restart_svc
+  } else {
+    $notify_svc = []
   }
 
-  $full_path = "${install_path}/${filename_real}"
-
+  $full_path    = "${install_path}/${filename_real}"
+  $version_file = "${full_path}.version"
+  $deploy_name  = regsubst($filename_real, "\.${format}", "")
+  
+  if $undeploy {
+    $undeploy_cmd = "&& rm -rf ${install_path}/${project}"
+  } else {
+    $undeploy_cmd = ""
+  }
+  
   exec { "artifactory_fetch_${name}":
-    command   => "curl -o ${full_path} ${fetch_url}",
+    command   => "curl -o ${full_path} ${fetch_url} ${undeploy_cmd} && echo '${version}' > ${version_file}",
     cwd       => $install_path,
-    creates   => $full_path,
     path      => '/usr/bin:/bin',
-    logoutput => on_failure;
+    logoutput => on_failure,
+    unless    => "grep '${version}' ${version_file}",
+    notify    => $notify_svc,
   }
+
+  
 }
